@@ -1,4 +1,3 @@
-
 from great_expectations.expectations.metrics.table_metric_provider import (
     TableMetricProvider
 )
@@ -29,8 +28,53 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import pandas as pd
 
 class DatesToMatchAcrossTables(TableMetricProvider):
-
     metric_name = "table.custom.expect_dates_to_match_across_tables"
+    value_keys = ("list_dates", "df_join")
+    
+    @metric_value(engine=PandasExecutionEngine)
+    def _pandas(
+        cls,
+        execution_engine: "PandasExecutionEngine",
+        metric_domain_kwargs: Dict,
+        metric_value_kwargs: Dict,
+        metrics: Dict[Tuple, Any],
+        runtime_configuration: Dict,
+    ):
+        df_join = metric_value_kwargs.get("df_join")
+        df_join = pd.DataFrame(df_join)
+        
+        list_dates = metric_value_kwargs.get("list_dates")
+        
+        total_licit = df_join.shape[0]
+        dict_unexpected_values = {"date1": [], "date2": [], "amount": [],"percent":[]}
+        
+        for l1 in range(len(list_dates)):
+            if l1 != (len(list_dates)-1):
+                for l2 in range(l1+1, len(list_dates)):
+                    list_date_1 = list_dates[l1]
+                    list_date_2 = list_dates[l2]
+                    for date_1 in list_date_1:
+                        for date_2 in list_date_2:
+                            df_join_temp = df_join.filter(df_join[date_1] > df_join[date_2])
+                            df_join_temp = df_join[df_join[date_1] > df_join[date_2]]
+                            amount = df_join_temp.shape[0]
+                            if amount > 0 :
+                                dict_unexpected_values["date1"].append(date_1)
+                                dict_unexpected_values["date2"].append(date_2)
+                                dict_unexpected_values["amount"].append(amount)
+                                percent = (amount/total_licit)*100
+                                percent = round(float(f"{percent:,}"), 2)
+                                dict_unexpected_values["percent"].append(percent)
+        
+        len_unexpected_values = len(dict_unexpected_values["date1"])
+        success = (len_unexpected_values == 0)
+        dict_unexpected_values["date1"] = dict_unexpected_values["date1"][:100]
+        dict_unexpected_values["date2"] = dict_unexpected_values["date2"][:100]
+        dict_unexpected_values["amount"] = dict_unexpected_values["amount"][:100]
+        dict_unexpected_values["percent"] = dict_unexpected_values["percent"][:100]
+        
+        return success, len_unexpected_values, dict_unexpected_values
+    
     @metric_value(engine=SparkDFExecutionEngine)
     def _spark(
         cls,
@@ -40,22 +84,58 @@ class DatesToMatchAcrossTables(TableMetricProvider):
         metrics: Dict[Tuple, Any],
         runtime_configuration: Dict,
     ):
-        df_licitacao, _, _ = execution_engine.get_compute_domain(
-            domain_kwargs=metric_domain_kwargs, domain_type=MetricDomainTypes.TABLE
-        )
+        from pyspark.context import SparkContext
+        from pyspark.sql.session import SparkSession
+        from pyspark.sql import Row
+        
+        sc = SparkContext.getOrCreate()
+        spark = SparkSession(sc)
+        
+        df_join = metric_value_kwargs.get("df_join")
+        df_join = spark.createDataFrame(Row(**x) for x in df_join)
+        
+        list_dates = metric_value_kwargs.get("list_dates")
+        
+        total_licit = df_join.count()
+        dict_unexpected_values = {"date1": [], "date2": [], "amount": [],"percent":[]}
 
-        return df_licitacao
+        for l1 in range(len(list_dates)):
+            if l1 != (len(list_dates)-1):
+                for l2 in range(l1+1, len(list_dates)):
+                    list_date_1 = list_dates[l1]
+                    list_date_2 = list_dates[l2]
+                    for date_1 in list_date_1:
+                        for date_2 in list_date_2:
+                            df_join_temp = df_join.filter(df_join[date_1] > df_join[date_2])
+                            amount = df_join_temp.count()
+                            if amount > 0 :
+                                dict_unexpected_values["date1"].append(date_1)
+                                dict_unexpected_values["date2"].append(date_2)
+                                dict_unexpected_values["amount"].append(amount)
+                                percent = (amount/total_licit)*100
+                                percent = round(float(f"{percent:,}"), 2)
+                                dict_unexpected_values["percent"].append(percent)
+        
+        len_unexpected_values = len(dict_unexpected_values["date1"])
+        success = (len_unexpected_values == 0)
+        dict_unexpected_values["date1"] = dict_unexpected_values["date1"][:100]
+        dict_unexpected_values["date2"] = dict_unexpected_values["date2"][:100]
+        dict_unexpected_values["amount"] = dict_unexpected_values["amount"][:100]
+        dict_unexpected_values["percent"] = dict_unexpected_values["percent"][:100]
+        
+        return success, len_unexpected_values, dict_unexpected_values
 
 
 class ExpectDatesToMatchAcrossTables(TableExpectation):
     metric_dependencies = ("table.custom.expect_dates_to_match_across_tables",)
-    success_keys = ("list_dates",)
+    success_keys = ("list_dates", "df_join")
 
     # Default values
     default_kwarg_values = {
         "row_condition": None,
         "condition_parser": None,
-        "list_dates": None
+        "list_dates": None,
+        "df_join": None
     }
 
     def _validate(
@@ -65,34 +145,8 @@ class ExpectDatesToMatchAcrossTables(TableExpectation):
         runtime_configuration: dict = None,
         execution_engine: ExecutionEngine = None,
     ):
-        df_licitacao = metrics["table.custom.expect_dates_to_match_across_tables"]
-
-
-        total_licit = df_licitacao.count()
-        dict_unexpected_values = {"date1": [], "date2": [], "amount": [],"percent":[]}
-        list_dates = self.get_success_kwargs(configuration).get("list_dates")
-        for l1 in range(len(list_dates)):
-            if l1 != (len(list_dates)-1):
-                for l2 in range(l1+1, len(list_dates)):
-                    list_date_1 = list_dates[l1]
-                    list_date_2 = list_dates[l2]
-                    for date_1 in list_date_1:
-                        for date_2 in list_date_2:
-                            df_licitacao_temp = df_licitacao.filter(df_licitacao[date_1] > df_licitacao[date_2])
-                            amount = df_licitacao_temp.count()
-                            if amount > 0 :
-                                dict_unexpected_values["date1"].append(date_1)
-                                dict_unexpected_values["date2"].append(date_2)
-                                dict_unexpected_values["amount"].append(amount)
-                                percent = (amount/total_licit)*100
-                                percent = round(float(f"{percent:,}"), 2)
-                                dict_unexpected_values["percent"].append(percent)
-
-
-        len_unexpected_values = len(dict_unexpected_values["date1"])
-
-        success = (len_unexpected_values == 0)
-        
+        success, len_unexpected_values, dict_unexpected_values = metrics["table.custom.expect_dates_to_match_across_tables"]
+                
         return {"success": success, "result": {"observed_value": len_unexpected_values, "unexpected_values": dict_unexpected_values}}
     
 
@@ -113,12 +167,13 @@ class ExpectDatesToMatchAcrossTables(TableExpectation):
             include_column_name if include_column_name is not None else True
         )
         styling = runtime_configuration.get("styling")
+        
         params = substitute_none_for_missing(
             configuration.kwargs,
             [],
         )
 
-        template_str = "A data apresentada na coluna \"Data 1\" não deve ser maior que a data da coluna \"Data 2\"."
+        template_str = 'As datas apresentadas em \"Data 1\" não devem ser maiores do que em \"Data 2\".'
 
         return [
             RenderedStringTemplateContent(

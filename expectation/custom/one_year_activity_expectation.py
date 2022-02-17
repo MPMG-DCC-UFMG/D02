@@ -31,10 +31,11 @@ from great_expectations.render.util import substitute_none_for_missing, num_to_s
 
 from typing import Any, Dict, List, Optional, Union, Tuple
 
-class TableCountLicitacoesConviteWithNoGuests(TableMetricProvider):
+class TableCountLicitacoesConviteWithActivityAboveOneYear(TableMetricProvider):
     """MetricProvider Class for Custom Aggregate UniqueValueRate MetricProvider"""
 
-    metric_name = "table.custom.count_licitacoes_convite_with_no_guests"
+    metric_name = "table.custom.activity_above_one_year"
+    value_keys = ("licitacao_id_field", "year_column_name",)
 
     @metric_value(engine=PandasExecutionEngine)
     def _pandas(
@@ -49,21 +50,19 @@ class TableCountLicitacoesConviteWithNoGuests(TableMetricProvider):
             domain_kwargs=metric_domain_kwargs, domain_type=MetricDomainTypes.TABLE
         )
 
-        df = df[["id_licitacao", "cod_modalidade", "modalidade", "num_convidados"]]
-        df["num_convidados"] = pd.to_numeric(df["num_convidados"]) # Converte para numérico
+        licitacao_id_field = metric_value_kwargs.get("licitacao_id_field")
+        year_column_name = metric_value_kwargs.get("year_column_name")
 
-        # Dataframe com licitações CONVITE que não possuem convidados (cod_modalidade = 1)
-        df_convite = df[(df["modalidade"] == "CONVITE") & (df["num_convidados"] < 1)]
-        
-        # Dataframe com licitações CARTA CONVITE que não possuem convidados (cod_modalidade = 3)
-        df_carta_convite = df[(df["modalidade"] == "CARTA CONVITE") & (df["num_convidados"] < 1)]
-
-        # Dataframe com TODAS as licitações que não possuem convidados
-        df_unexpected = pd.concat([df_convite, df_carta_convite])
+        df = df[[licitacao_id_field, year_column_name]]
+        df_grouped = df.groupby([licitacao_id_field]).nunique().reset_index()
+        df_grouped = df_grouped.sort_values(by=year_column_name, ascending=False)
+        df_unexpected = df_grouped[df_grouped[year_column_name] > 1]
 
         count_licitacao = df_unexpected.shape[0]
-        #unexpected_values = df_unexpected[["id_licitacao", "num_convidados"]].copy()
-        unexpected_values = list(df_unexpected["id_licitacao"])
+        unexpected_values = list(df_unexpected[licitacao_id_field])
+        
+        if len(unexpected_values) > 100:
+            unexpected_values = unexpected_values[:100]
 
         return count_licitacao, unexpected_values
     
@@ -79,53 +78,35 @@ class TableCountLicitacoesConviteWithNoGuests(TableMetricProvider):
         df, _, _ = execution_engine.get_compute_domain(
             domain_kwargs=metric_domain_kwargs, domain_type=MetricDomainTypes.TABLE
         )
-        
-        df.select(F.col("id_licitacao"), F.col("cod_modalidade"), F.col("modalidade"), F.col("num_convidados"))
-        df.select(F.col("num_convidados").cast("int").alias("num_convidados")) # Converte para numérico
-        
-        # Dataframe com licitações CONVITE que não possuem convidados (cod_modalidade = 1)
-        df_convite = df.alias('df_convite')
-        df_convite = df_convite.filter((df_convite.modalidade == "CONVITE") & (df_convite.num_convidados < 1))
-        
-        # Dataframe com licitações CARTA CONVITE que não possuem convidados (cod_modalidade = 3)
-        df_carta_convite = df.alias('df_carta_convite')
-        df_carta_convite = df_carta_convite.filter((df_carta_convite.modalidade == "CARTA CONVITE") & (df_carta_convite.num_convidados < 1))
 
-        # Dataframe com TODAS as licitações que não possuem convidados
-        df_unexpected = df_convite.union(df_carta_convite)
+        licitacao_id_field = metric_value_kwargs.get("licitacao_id_field")
+        year_column_name = metric_value_kwargs.get("year_column_name")
+        
+        df.select(F.col(licitacao_id_field), F.col(year_column_name))
+        df_grouped = df.groupBy(licitacao_id_field).agg(F.countDistinct(year_column_name).alias("ano_referencia_count"))
+        df_grouped = df_grouped.sort("ano_referencia_count", ascending=False)
+        df_unexpected = df_grouped.filter(df_grouped.ano_referencia_count > 1)
 
         count_licitacao = df_unexpected.count()
-        #unexpected_values = list(df_unexpected.select("id_licitacao").collect())
-        unexpected_values = df_unexpected.select("id_licitacao").rdd.flatMap(list).collect()
+        unexpected_values = df_unexpected.select(licitacao_id_field).rdd.flatMap(list).collect()
+        
+        if len(unexpected_values) > 100:
+            unexpected_values = unexpected_values[:100]
         
         return count_licitacao, unexpected_values
 
 
-    # @metric_partial(
-    #     engine=SqlAlchemyExecutionEngine,
-    #     partial_fn_type=MetricPartialFunctionTypes.AGGREGATE_FN,
-    #     domain_type=MetricDomainTypes.TABLE,
-    # )
-    # def _sqlalchemy(
-    #     cls,
-    #     execution_engine: "SqlAlchemyExecutionEngine",
-    #     metric_domain_kwargs: Dict,
-    #     metric_value_kwargs: Dict,
-    #     metrics: Dict[Tuple, Any],
-    #     runtime_configuration: Dict,
-    # ):
-    #     return sa.func.count(), metric_domain_kwargs, {}
-
-
-class ExpectTableFatoLicitacaoToHaveGuestsIfInvite(TableExpectation):
+class ExpectOnlyOneYearOfActivity(TableExpectation):
     # Setting necessary computation metric dependencies and defining kwargs, as well as assigning kwargs default values
-    metric_dependencies = ("table.custom.count_licitacoes_convite_with_no_guests",)
-    success_keys = ()
+    metric_dependencies = ("table.custom.activity_above_one_year",)
+    success_keys = ("licitacao_id_field", "year_column_name",)
 
     # Default values
     default_kwarg_values = {
         "row_condition": None,
         "condition_parser": None,
+        "licitacao_id_field": None,
+        "year_column_name": None,
     }
     
     
@@ -139,12 +120,12 @@ class ExpectTableFatoLicitacaoToHaveGuestsIfInvite(TableExpectation):
         execution_engine: ExecutionEngine = None,
     ):
         """Validates the given data against the set minimum and maximum value thresholds for the column max"""
-        count_licitacao, unexpected_values = metrics["table.custom.count_licitacoes_convite_with_no_guests"]
+        count_licitacao, unexpected_values = metrics["table.custom.activity_above_one_year"]
 
         # Checking if mean lies between thresholds
         success = (count_licitacao == 0)
 
-        return {"success": success, "result": {"observed_value": len(unexpected_values), "partial_unexpected_list": unexpected_values}}
+        return {"success": success, "result": {"observed_value": count_licitacao, "partial_unexpected_list": unexpected_values}}
         
         
         
@@ -194,7 +175,7 @@ class ExpectTableFatoLicitacaoToHaveGuestsIfInvite(TableExpectation):
             [],
         )
         #template_str = "Must have exactly $value rows."
-        template_str = "Os registros devem possuir no mínimo um convidado caso a modalidade seja `CONVITE` ou `CARTA CONVITE`."
+        template_str = "As licitações devem possuir somente um único ano de atividade."
 
         return [
             RenderedStringTemplateContent(
@@ -264,10 +245,10 @@ class ExpectTableFatoLicitacaoToHaveGuestsIfInvite(TableExpectation):
             if total_count == result_dict.get("unexpected_count"):
                 header_row = ["Unexpected Value", "Count"]
             else:
-                header_row = ["IDs de licitações sem convidados"]
+                header_row = ["IDs de licitações com vários anos de atividade"]
                 table_rows = [[row[0]] for row in table_rows]
         else:
-            header_row = ["IDs de licitações sem convidados"]
+            header_row = ["IDs de licitações com vários anos de atividade"]
             sampled_values_set = set()
             for unexpected_value in result_dict.get("partial_unexpected_list"):
                 if unexpected_value:

@@ -1,5 +1,3 @@
-
-
 from dateutil.parser import parse
 import pandas as pd
 
@@ -57,7 +55,8 @@ class ColumnValuesBetweenCast(ColumnMapMetricProvider):
 
         if parse_strings_as_datetimes:
             warnings.warn(
-                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a future release.  Please update code accordingly.
+                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a \
+future release.  Please update code accordingly.
 """,
                 DeprecationWarning,
             )
@@ -188,7 +187,8 @@ class ColumnValuesBetweenCast(ColumnMapMetricProvider):
     ):
         if parse_strings_as_datetimes:
             warnings.warn(
-                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a future release.  Please update code accordingly.
+                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a \
+future release.  Please update code accordingly.
 """,
                 DeprecationWarning,
             )
@@ -252,7 +252,8 @@ class ColumnValuesBetweenCast(ColumnMapMetricProvider):
     ):
         if parse_strings_as_datetimes:
             warnings.warn(
-                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a future release.  Please update code accordingly.
+                """The parameter "parse_strings_as_datetimes" is no longer supported and will be deprecated in a \
+future release.  Please update code accordingly.
 """,
                 DeprecationWarning,
             )

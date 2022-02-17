@@ -1,11 +1,14 @@
-
 """
 Verifica se existe alguma licitação cujo valor excede o total arrecadado pelo município
 naquele ano.
 
-Entrada:
-    df_receita (pandas DataFrame ou Spark table) - tabela contendo os dados da receita
-    já agrupados por entidade e ano.
+Args:
+    table_id (string): Chave primária da tabela de origem para identificar as instâncias
+        no data_docs.
+    df_licitacao (list): tabela contendo valores de licitações referenciadas na tabela 
+        de origem.
+    df_receita (list): tabela contendo os dados da receita já agrupados por entidade e ano.
+        Necessária para obter informações de receita do município.
 """
 
 import pandas as pd
@@ -33,6 +36,7 @@ from typing import Any, Dict, Optional, Tuple
 
 class ValueLessRevenue(TableMetricProvider):
     metric_name = "table.custom.value_less_revenue"
+    value_keys = ("table_id", "df_licitacao", "df_receita", "value_columns")
 
 
     @metric_value(engine=PandasExecutionEngine)
@@ -44,11 +48,80 @@ class ValueLessRevenue(TableMetricProvider):
         metrics: Dict[Tuple, Any],
         runtime_configuration: Dict,
     ):
-        df_licitacao, _, _ = execution_engine.get_compute_domain(
+        df, _, _ = execution_engine.get_compute_domain(
             domain_kwargs=metric_domain_kwargs, domain_type=MetricDomainTypes.TABLE
         )
 
-        return df_licitacao
+        table_id = metric_value_kwargs.get("table_id")
+
+        df_receita = metric_value_kwargs.get("df_receita")
+        df_receita = pd.DataFrame(df_receita)
+
+        table_size = df.shape[0]
+
+        df_licitacao = metric_value_kwargs.get("df_licitacao")
+        # Se não for a fato_licitacao, fazemos um join
+        if df_licitacao is not None:
+            df_licitacao = pd.DataFrame(df_licitacao)
+
+            # Join com a fato_licitacao para obter informações de valores
+            df = pd.merge(df, df_licitacao, on='id_licitacao', how='inner')
+
+        # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
+        df['ano_exercicio_tmp'] = df['ano_exercicio']
+        df.loc[df['ano_exercicio'] == date.today().year, 'ano_exercicio'] = date.today().year - 1
+
+        # Join com a fato_receita para obter informações do município
+        df = pd.merge(df, df_receita, on=['nome_entidade', 'ano_exercicio'], how='inner')
+
+        # Ordenando por município e ano
+        df = df.sort_values(by=['nome_entidade', 'ano_exercicio'])
+
+        # Se a receita for 0, é substituída pela do ano anterior
+        df['vlr_arrecadado'] = np.where(df['vlr_arrecadado'] != 0, df['vlr_arrecadado'], np.nan)
+        df['vlr_arrecadado'].ffill(inplace=True)
+        
+        # Colunas de valores a serem comparados com a receita
+        value_columns = metric_value_kwargs.get("value_columns")
+
+        # Entradas da tabela resultante onde algum valor supera a receita total arrecadada
+        df_iter = None
+        for column in value_columns:
+            df_current = df[df[column] > df['vlr_arrecadado']]
+
+            df_current['vlr_comparado'] = df[column]
+            df_current['coluna_comparada'] = column
+
+            if df_iter is None:
+                df_iter = df_current
+            else:
+                df_iter = df_iter.union(df_current)
+
+        df = df_iter
+        # Resgatando os valores originais do ano corrente
+        df['ano_exercicio'] = df['ano_exercicio_tmp']
+        df.drop('ano_exercicio_tmp', axis=1, inplace=True)
+
+        df['table_id'] = df[table_id]
+        
+        unexpected_percent = 100 * (df.shape[0] / table_size)
+
+        # Convertendo o DataFrame para o formato necessário
+        df = df.head(100)
+        # Selecionando as colunas de interesse
+        arr_fields = []
+        arr_fields.append("table_id")
+        arr_fields.append("cod_entidade")
+        arr_fields.append("nome_entidade")
+        arr_fields.append("ano_exercicio")
+        arr_fields.append("coluna_comparado")
+        arr_fields.append("vlr_comparado")
+        arr_fields.append("vlr_arrecadado")
+
+        df = df[arr_fields]
+        return_df = df.to_dict('records')
+
+        return return_df, unexpected_percent
     
 
     @metric_value(engine=SparkDFExecutionEngine)
@@ -60,25 +133,128 @@ class ValueLessRevenue(TableMetricProvider):
         metrics: Dict[Tuple, Any],
         runtime_configuration: Dict,
     ):
-        df_licitacao, _, _ = execution_engine.get_compute_domain(
+        df, _, _ = execution_engine.get_compute_domain(
             domain_kwargs=metric_domain_kwargs, domain_type=MetricDomainTypes.TABLE
         )
 
-        return df_licitacao
+        # Imports necessários para o pyspark
+        from pyspark.context import SparkContext
+        from pyspark.sql.session import SparkSession
+        from pyspark.sql import Row
+        from pyspark.sql import functions as F
+        from pyspark.sql.window import Window
+        from pyspark.sql.functions import lit
+        from pyspark.sql.functions import col
+        
+        sc = SparkContext.getOrCreate()
+        spark = SparkSession(sc)
+
+        # Resgatando os parâmetros da entrada
+        table_id = metric_value_kwargs.get("table_id")
+
+        df_receita = metric_value_kwargs.get("df_receita")
+        df_receita = spark.createDataFrame(Row(**x) for x in df_receita)
+
+        table_size = df.count()
+
+        # Colunas de valores a serem comparados com a receita
+        value_columns = metric_value_kwargs.get("value_columns")
+
+        # Flag para indicar se a tabela é a própria fato_licitacao
+        df_licitacao = metric_value_kwargs.get("df_licitacao")
+        flag = df_licitacao is None
+        # Se não for a fato_licitacao, fazemos um join
+        if flag == False:
+            df_licitacao = spark.createDataFrame(Row(**x) for x in df_licitacao)
+
+            # Join com a fato_licitacao para obter informações de valores
+            df = df.join(df_licitacao, on="id_licitacao", how="inner")
+
+        # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
+        df = df.withColumn("ano_exercicio_tmp", df.ano_exercicio)
+        df = df.withColumn(
+            "ano_exercicio", F.when(df.ano_exercicio == date.today().year, date.today().year - 1)
+            .otherwise(df.ano_exercicio)
+        )
+
+        # Join com a fato_receita para obter informações do município
+        df = df.join(df_receita, on=["cod_entidade", "ano_exercicio"], how="inner")
+
+        # Se o valor arrecadado for 0, seu valor é substituída pelo do ano anterior
+        df = df.withColumn(
+            "vlr_arrecadado", F.when(df.vlr_arrecadado == 0, None)
+            .otherwise(df.vlr_arrecadado)
+        )
+        
+        window = (
+            Window
+            .partitionBy("vlr_arrecadado")
+            .orderBy(["cod_entidade", "ano_exercicio"])
+            .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+        )
+        df = (
+            df
+            .withColumn("vlr_arrecadado", F.last("vlr_arrecadado", ignorenulls=True).over(window))
+        )
+
+
+        # Entradas da tabela resultante onde algum valor supera a receita total arrecadada
+        df_iter = None
+        for column in value_columns:
+            df_current = df.filter(col(column) > df.vlr_arrecadado).alias('df_current')
+            df_current = df_current.withColumn("vlr_comparado", col(column))
+            df_current = df_current.withColumn("coluna_comparado", lit(column))
+            if df_iter is None:
+                df_iter = df_current.alias('df_iter')
+            else:
+                df_iter = df_iter.union(df_current)
+        
+        df = df_iter
+        # Resgatando os valores originais do ano corrente
+        df = df.withColumn("ano_exercicio", df.ano_exercicio_tmp)
+        df = df.drop("ano_exercicio_tmp")
+
+        df = df.withColumn("table_id", col(table_id))
+
+        unexpected_percent = 100 * (df.count() / table_size)
+
+        # Convertendo o DataFrame para o formato necessário
+        df = df.limit(100)
+        # Selecionando as colunas de interesse
+        arr_fields = []
+        arr_fields.append("table_id")
+        arr_fields.append("cod_entidade")
+        arr_fields.append("nome_entidade")
+        arr_fields.append("ano_exercicio")
+        arr_fields.append("coluna_comparado")
+        arr_fields.append("vlr_comparado")
+        arr_fields.append("vlr_arrecadado")
+        df = df.select(*arr_fields)
+
+        return_df = list(map(lambda row: row.asDict(), df.collect()))
+
+        return return_df, unexpected_percent
 
 
 class ExpectValueLessRevenue(TableExpectation):
     # Setting necessary computation metric dependencies and defining kwargs,
     # as well as assigning kwargs default values
     metric_dependencies = ("table.custom.value_less_revenue",)
-    success_keys = ("df_receita", "columns")
+    success_keys = (
+        "table_id",
+        "value_columns",
+        "df_licitacao",
+        "df_receita"
+    )
 
     # Default values
     default_kwarg_values = {
         "row_condition": None,
         "condition_parser": None,
-        "df_receita": None,
-        "columns": ['id_licitacao', 'nome_entidade', 'ano_exercicio', 'vlr_licitacao']
+        "table_id": None,
+        "value_columns": None,
+        "df_licitacao": None,
+        "df_receita": None
     }
 
 
@@ -89,108 +265,30 @@ class ExpectValueLessRevenue(TableExpectation):
         runtime_configuration: dict = None,
         execution_engine: ExecutionEngine = None,
     ):
-        df_licitacao = metrics["table.custom.value_less_revenue"]
+        return_df, unexpected_percent = metrics["table.custom.value_less_revenue"]
 
-        df_receita = self.get_success_kwargs(configuration).get("df_receita")
-        columns = self.get_success_kwargs(configuration).get("columns")
-
-        # Implementação Pandas: não foi possível passar os parâmetros para a métrica "table.custom.value_less_revenue"
-        try:
-            # Se for um pandas DataFrame
-            df_licitacao = pd.DataFrame(df_licitacao)
-        
-            df_receita = pd.DataFrame(df_receita)
-        
-            # Selecionando as colunas de interesse e excluindo duplicatas
-            df_licitacao = df_licitacao[columns]
-            df_licitacao = df_licitacao.drop_duplicates()
-
-            # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
-            df_licitacao['ano_exercicio_tmp'] = df_licitacao['ano_exercicio']
-            df_licitacao.loc[df_licitacao['ano_exercicio'] == date.today().year, 'ano_exercicio'] = date.today().year - 1
-
-            # Inner join de ambas as tabelas
-            df = pd.merge(df_licitacao, df_receita, on=['nome_entidade', 'ano_exercicio'], how='inner')
-
-            # Ordenando por município e ano
-            df = df.sort_values(by=['nome_entidade', 'ano_exercicio'])
-
-            # Se a receita for 0, é substituída pela do ano anterior
-            df["vlr_arrecadado"] = np.where(df["vlr_arrecadado"] != 0, df["vlr_arrecadado"], np.nan)
-            df["vlr_arrecadado"].ffill(inplace=True)
-
-            # Entradas da tabela resultante onde o valor da licitação supera a receita total arrecadada
-            df = df[df['vlr_licitacao'] > df['vlr_arrecadado']]
-
-            df['ano_exercicio'] = df['ano_exercicio_tmp']
-            success = (len(df) == 0)
-            return_df = df.to_dict('records')
-            unexpected_percent = 100 * (df.shape[0] / df_licitacao.shape[0])
-
-        # Implementação Spark
-        except ValueError:
-
-            # [NOTE] Precisei adicionar esses imports para usar a variável spark ao criar o dataframe df_receita
-            from pyspark.context import SparkContext
-            from pyspark.sql.session import SparkSession
-            from pyspark.sql import Row
-            sc = SparkContext.getOrCreate()
-            spark = SparkSession(sc)
-
-            # Se for um spark DataFrame
-            df_licitacao = df_licitacao
-
-            #df_receita = spark.createDataFrame(df_receita)
-            df_receita = spark.createDataFrame(Row(**x) for x in df_receita)
-        
-            # Selecionando as colunas de interesse e excluindo duplicatas
-            df_licitacao = df_licitacao.select(*columns)
-            df_licitacao = df_licitacao.dropDuplicates()
-
-            # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
-            df_licitacao = df_licitacao.withColumn("ano_exercicio_tmp", df_licitacao.ano_exercicio)
-            df_licitacao = df_licitacao.withColumn("ano_exercicio", F.when(df_licitacao.ano_exercicio == date.today().year, date.today().year - 1).otherwise(df_licitacao.ano_exercicio))
-
-            # Inner join de ambas as tabelas
-            df = df_licitacao.join(df_receita, on=["nome_entidade", "ano_exercicio"], how="inner")
-
-            # Ordenando por município e ano
-            df = df.orderBy(["nome_entidade", "ano_exercicio"])
-
-            # Se a receita for 0, é substituída pela do ano anterior
-            df = df.withColumn("vlr_arrecadado", F.when(df.vlr_arrecadado != 0, df.vlr_arrecadado).otherwise(np.nan))
-            #df["vlr_arrecadado"].ffill(inplace=True) # Esta função ainda não está disponível no pyspark
-
-            # Entradas da tabela resultante onde o valor da licitação supera a receita total arrecadada
-            df = df.filter(df.vlr_licitacao > df.vlr_arrecadado)
-            
-            df = df.withColumn("ano_exercicio", df.ano_exercicio)
-            success = (df.count() == 0)
-            return_df = list(map(lambda row: row.asDict(), df.collect()))
-            unexpected_percent = 100 * (df.count() / df_licitacao.count())
-
-
-        
-
+        success = (len(return_df) == 0)
+        table_id = self.default_kwarg_values.get("table_id")
         return {
             "success": success,
             "result": {
                 "dataframe": return_df,
-                "unexpected_percent": unexpected_percent
+                "unexpected_percent": unexpected_percent,
+                "table_id":table_id
             }
         }
 
 
     def validate_configuration(self, configuration: Optional[ExpectationConfiguration]):
         """
-        Validates that a configuration has been set, and sets a configuration if it has yet to be set. Ensures that
-        necessary configuration arguments have been provided for the validation of the expectation.
+        Valida se uma configuração foi definida e se os parâmetros foram fornecidos
+        corretamente.
 
         Args:
             configuration (OPTIONAL[ExpectationConfiguration]):
-                An optional Expectation Configuration entry that will be used to configure the expectation
-        Returns:
-            True if the configuration has been validated successfully. Otherwise, raises an exception
+                Parâmetro opcional de configuração.
+        Retorna:
+            Verdadeiro se tudo foi configurado corretamente e falso caso contrário.
         """
 
         # Setting up a configuration
@@ -199,26 +297,37 @@ class ExpectValueLessRevenue(TableExpectation):
 
         if configuration is None:
             configuration = self.configuration
-
-        # Ensuring basic configuration parameters are properly set
-        try:
-            assert("df_receita" in configuration.kwargs)
-        except AssertionError:
-            print("'df_receita' parameter is required for this expectation")
-            return False
         
-        try:
-            assert("columns" in configuration.kwargs)
-        except AssertionError:
-            print("'columns' parameter is required for this expectation")
-            return False
+        parameters = {
+            "table_id": "str",
+            "value_columns": "list",
+            "df_licitacao": "list",
+            "df_receita": "list"
+        }
 
-        # Validating that 'df_receita' is of the proper format and type
-        if "df_receita" in configuration.kwargs:
-            df_receita = configuration.kwargs["df_receita"]
+        for p in parameters.keys():
+            # Conferindo se os argumentos foram fornecidos
+            try:
+                assert(p in configuration.kwargs)
+            except AssertionError:
+                print("{} parameter is required for this expectation".format(p))
+                return False
         
-        if "columns" in configuration.kwargs:
-            columns = configuration.kwargs["columns"]
+            arg = configuration.kwargs[p]
+            
+            # Validando se o parâmetro não é nulo
+            try:
+                assert(arg is not None)
+            except AssertionError:
+                print("{} parameter is None".format(p))
+                return False
+
+            # Validando se o parâmetro é do tipo correto
+            try:
+                assert(isinstance(arg, eval(parameters[p])))
+            except AssertionError:
+                print("{} parameter is not an instance of {}".format(p, parameters[p]))
+                return False
 
         return True
 
@@ -245,9 +354,7 @@ class ExpectValueLessRevenue(TableExpectation):
             [],
         )
 
-        template_str = """
-            Possível erro de digitação. Valores de licitação maiores que a receita do município/estado.
-        """
+        template_str = "O valor comparado não deve ser maior do que a receita do município/estado."
 
         return [
             RenderedStringTemplateContent(
@@ -286,22 +393,31 @@ class ExpectValueLessRevenue(TableExpectation):
         if not result_dict.get("dataframe"):
             return None
         else:
-            df_receita = result_dict.get("dataframe")
-            header_row = ["id_licitacao", "ano_exercicio", "nome_entidade", "vlr_licitacao", "vlr_arrecadado"]
+            df = result_dict.get("dataframe")
+            for row in df:
 
-            for row in df_receita:
-                # Modificando o formato das colunas de valores
-                vlr_licitacao = round(float(row["vlr_licitacao"]),2)
-                vlr_arrecadado = round(float(row["vlr_arrecadado"]),2)
+                for col_name in df[0].keys():
+                    if "vlr" in col_name:
+                        # Modificando o formato das colunas de valores
+                        value = round(float(row[col_name]), 2)
+                        row[col_name] = f"R$ {value:,.2f}".replace(',','v').replace('.',',').replace('v','.')
+                table_rows.append([
+                    row["ano_exercicio"],
+                    row["nome_entidade"],
+                    row["table_id"],
+                    row["coluna_comparado"],
+                    row["vlr_comparado"],
+                    row["vlr_arrecadado"]
+                ])
 
-                # Adiciona máscara para formato brasileiro de moeda
-                row["vlr_licitacao"] = f"R$ {vlr_licitacao:,.2f}".replace(',','v').replace('.',',').replace('v','.')
-                row["vlr_arrecadado"] = f"R$ {vlr_arrecadado:,.2f}".replace(',','v').replace('.',',').replace('v','.')
-
-                # Selecionando as colunas restantes
-                columns = [row[k] for k in header_row]
-                table_rows.append(columns)
-        
+        header_row = [
+            "Ano exercicio",
+            "Nome entidade",
+            "Id tabela",
+            "Coluna comparada",
+            "Valor comparado",
+            "Valor arrecadado"
+        ]
         unexpected_table_content_block = RenderedTableContent(
             **{
                 "content_block_type": "table",
