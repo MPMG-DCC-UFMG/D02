@@ -72,7 +72,7 @@ class SumOfItemValuesToMatchFatoLicitacao(TableMetricProvider):
         valores['diferenca'] = valores['valor_total'] - valores['vlr_licitacao']
         valores['diferenca_abs'] = valores['diferenca'].abs()
         
-        df = valores[valores['diferenca_abs'] > offset][['id_licitacao', 'diferenca_abs']]
+        df = valores[valores['diferenca_abs'] > offset][['id_licitacao',  'valor_total', 'vlr_licitacao','diferenca_abs']]
 
         success = (df.shape[0] == 0)
         return_df = df.head(10).to_dict('records')
@@ -129,9 +129,8 @@ class SumOfItemValuesToMatchFatoLicitacao(TableMetricProvider):
         
         success = (valores_filter.count() == 0)
         unexpected_percent = 100 * valores_filter.count() / valores.count()
-        #valores_filter = valores_filter.take(10)
         valores_filter = valores_filter.limit(100)
-        return_df = list(map(lambda row: row.asDict(), valores_filter.select('id_licitacao', 'diferenca_abs').collect()))
+        return_df = list(map(lambda row: row.asDict(), valores_filter.select('id_licitacao', 'valor_total','vlr_licitacao','diferenca_abs').collect()))
 
         return success, return_df, unexpected_percent
 
@@ -234,7 +233,7 @@ class ExpectSumOfItemValuesToMatchFatoLicitacao(TableExpectation):
             [],
         )
 
-        template_str = "Possível erro de digitação. Soma dos valores dos itens de licitação maiores que o valor da licitação."
+        template_str = "Soma dos valores dos itens de licitação diferente do valor da licitação."
 
         return [
             RenderedStringTemplateContent(
@@ -274,10 +273,18 @@ class ExpectSumOfItemValuesToMatchFatoLicitacao(TableExpectation):
             result_dict = result_dict.get("dataframe")
             for id_dict in result_dict:
                 id = id_dict.get("id_licitacao")
+                sum_itens = id_dict.get("valor_total")
+                sum_itens = round(float(sum_itens), 2)
+                sum_itens = f"R$ {sum_itens:,.2f}".replace(',','v').replace('.',',').replace('v','.')
+                vlr_licit = id_dict.get("vlr_licitacao")
+                vlr_licit = round(float(vlr_licit), 2)
+                vlr_licit = f"R$ {vlr_licit:,.2f}".replace(',','v').replace('.',',').replace('v','.')
                 dif = id_dict.get("diferenca_abs")
-                table_rows.append([id, dif])
+                dif = round(float(dif), 2)
+                dif = f"R$ {dif:,.2f}".replace(',','v').replace('.',',').replace('v','.')
+                table_rows.append([id, sum_itens, vlr_licit, dif])
 
-        header_row = ["ID Licitação", "Diferença"]
+        header_row = ["ID Licitação", "Soma itens", "Vlr. Licitação", "Diferença"]
         
         unexpected_table_content_block = RenderedTableContent(
             **{
@@ -309,7 +316,7 @@ class ExpectSumOfItemValuesToMatchFatoLicitacao(TableExpectation):
 
         if result_dict.get("unexpected_percent") is not None:
             return (
-                str(round(result_dict.get("unexpected_percent"), 5)) + "% inesperado"
+                str(round(result_dict.get("unexpected_percent"), 3)) + "% inesperado"
             )
         else:
             return "--"

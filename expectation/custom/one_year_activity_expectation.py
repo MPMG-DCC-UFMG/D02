@@ -300,8 +300,8 @@ class ExpectOnlyOneYearOfActivity(TableExpectation):
             return str(observed_value)
         elif result_dict.get("unexpected_percent") is not None:
             return (
-                num_to_str(result_dict.get("unexpected_percent"), precision=5)
-                + "% unexpected"
+                num_to_str(result_dict.get("unexpected_percent"), precision=3)
+                + "% inesperedado"
             )
         else:
             return "--"

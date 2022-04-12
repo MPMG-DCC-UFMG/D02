@@ -17,7 +17,10 @@ from great_expectations.expectations.metrics.import_manager import F, sa
 
 from great_expectations.expectations.core import ExpectColumnValuesToBeBetween
 
-from great_expectations.expectations.util import render_evaluation_parameter_string
+from great_expectations.expectations.util import (
+    render_evaluation_parameter_string,
+    num_to_str
+)
 from great_expectations.render.renderer.renderer import renderer
 from great_expectations.render.types import RenderedStringTemplateContent, RenderedTableContent, RenderedBulletListContent, RenderedGraphContent
 from great_expectations.render.util import substitute_none_for_missing

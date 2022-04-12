@@ -50,7 +50,7 @@ class ExpectColumnValuesToMatchRegexCustomMessage(ExpectColumnValuesToMatchRegex
             template_str = "Valores devem seguir o formato da expressão regular fornecida"
             if params["mostly"] is not None:
                 params["mostly_pct"] = num_to_str(
-                    params["mostly"] * 100, precision=15, no_scientific=True
+                    params["mostly"] * 100, precision=3, no_scientific=True
                 )
                 # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
                 template_str += ", pelo menos $mostly_pct % do tempo."
@@ -80,3 +80,34 @@ class ExpectColumnValuesToMatchRegexCustomMessage(ExpectColumnValuesToMatchRegex
                 }
             )
         ]
+
+
+    @classmethod
+    @renderer(renderer_type="renderer.diagnostic.observed_value")
+    def _diagnostic_observed_value_renderer(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        result_dict = result.result
+        if result_dict is None:
+            return "--"
+
+        if result_dict.get("observed_value"):
+            observed_value = result_dict.get("observed_value")
+            if isinstance(observed_value, (int, float)) and not isinstance(observed_value, bool):
+                if (observed_value == 1):
+                    return num_to_str(observed_value, precision=3, use_locale=True) + " valores inesperados encontrados"
+                else:
+                    return num_to_str(observed_value, precision=3, use_locale=True) + " valores inesperados encontrados"
+            return num_to_str(observed_value)
+        elif result_dict.get("unexpected_percent") is not None:
+            return (
+                num_to_str(result_dict.get("unexpected_percent"), precision=3).replace(".", ",")
+                + "% inesperado"
+            )
+        else:
+            return "--"    

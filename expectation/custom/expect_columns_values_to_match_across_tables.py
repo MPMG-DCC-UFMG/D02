@@ -384,7 +384,7 @@ class ExpectColumnsValuesToMatchAcrossTables(TableExpectation):
 
         if result_dict.get("unexpected_percent") is not None:
             return (
-                str(round(result_dict.get("unexpected_percent"), 5))
+                str(round(result_dict.get("unexpected_percent"), 3)).replace(".", ",")
                 + "% unexpected"
             )
         else:

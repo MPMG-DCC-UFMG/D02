@@ -448,7 +448,7 @@ class ExpectValueLessRevenue(TableExpectation):
 
         if result_dict.get("unexpected_percent") is not None:
             return (
-                str(round(result_dict.get("unexpected_percent"), 5)) + "% unexpected"
+                str(round(result_dict.get("unexpected_percent"), 3)) + "% inesperado"
             )
         else:
             return "--"

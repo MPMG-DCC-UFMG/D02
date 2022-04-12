@@ -216,7 +216,7 @@ class ExpectDatesToMatchAcrossTables(TableExpectation):
             date1_l = unexpected_values["date1"]
             date2_l = unexpected_values["date2"]
             amount_l = unexpected_values["amount"]
-            percent_l = unexpected_values["percent"]
+            percent_l = round(float(unexpected_values["percent"]), 3)
             for date1, date2, amount, percent in zip(date1_l, date2_l, amount_l, percent_l):
                 table_rows.append([
                     date1,
