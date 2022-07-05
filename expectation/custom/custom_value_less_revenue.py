@@ -210,7 +210,7 @@ class ValueLessRevenue(TableMetricProvider):
         window = (
             Window
             .partitionBy("vlr_arrecadado")
-            .orderBy(["cod_entidade", "ano"])
+            .orderBy(["nome_entidade", "ano"])
             .rowsBetween(Window.unboundedPreceding, Window.currentRow)
         )
         df = (
