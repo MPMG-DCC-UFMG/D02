@@ -249,7 +249,7 @@ class ValueLessRevenue(TableMetricProvider):
 
         df = df.withColumn("table_id", col(table_id))
 
-        unexpected_records = df[table_id].countDistinct()
+        unexpected_records = df.agg(countDistinct(col(table_id)).alias("count")).collect()[0][0]
         unexpected_percent = 100 * (unexpected_records / table_size)
 
         # Convertendo o DataFrame para o formato necessário
