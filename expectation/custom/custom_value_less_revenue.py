@@ -9,6 +9,9 @@ Args:
         de origem.
     df_receita (list): tabela contendo os dados da receita já agrupados por entidade e ano.
         Necessária para obter informações de receita do município.
+    df_tempo (list): tabela contendo as informações de data para join com a tabela em 
+        questão usando a chave sk_tempo.
+    value_columns (list): lista com as colunas de valores que serão verificadas
 """
 
 import pandas as pd
@@ -36,7 +39,7 @@ from typing import Any, Dict, Optional, Tuple
 
 class ValueLessRevenue(TableMetricProvider):
     metric_name = "table.custom.value_less_revenue"
-    value_keys = ("table_id", "df_licitacao", "df_receita", "value_columns")
+    value_keys = ("table_id", "value_columns", "df_licitacao", "df_receita", "df_tempo")
 
 
     @metric_value(engine=PandasExecutionEngine)
@@ -57,6 +60,9 @@ class ValueLessRevenue(TableMetricProvider):
         df_receita = metric_value_kwargs.get("df_receita")
         df_receita = pd.DataFrame(df_receita)
 
+        df_tempo = metric_value_kwargs.get("df_tempo")
+        df_tempo = pd.DataFrame(df_tempo)
+
         table_size = df.shape[0]
 
         df_licitacao = metric_value_kwargs.get("df_licitacao")
@@ -65,17 +71,20 @@ class ValueLessRevenue(TableMetricProvider):
             df_licitacao = pd.DataFrame(df_licitacao)
 
             # Join com a fato_licitacao para obter informações de valores
-            df = pd.merge(df, df_licitacao, on='id_licitacao', how='inner')
+            df = pd.merge(df, df_licitacao, on='sk_licitacao', how='inner')
+
+        # Join com a dim_tempo para obter o ano da licitação
+        df = pd.merge(df, df_tempo, on='sk_tempo', how='inner')
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
-        df['ano_exercicio_tmp'] = df['ano_exercicio']
-        df.loc[df['ano_exercicio'] == date.today().year, 'ano_exercicio'] = date.today().year - 1
+        df['ano_tmp'] = df['ano']
+        df.loc[df['ano'] == date.today().year, 'ano'] = date.today().year - 1
 
         # Join com a fato_receita para obter informações do município
-        df = pd.merge(df, df_receita, on=['nome_entidade', 'ano_exercicio'], how='inner')
+        df = pd.merge(df, df_receita, on=['sk_ibge', 'ano'], how='inner')
 
         # Ordenando por município e ano
-        df = df.sort_values(by=['nome_entidade', 'ano_exercicio'])
+        df = df.sort_values(by=['nome_entidade', 'ano'])
 
         # Se a receita for 0, é substituída pela do ano anterior
         df['vlr_arrecadado'] = np.where(df['vlr_arrecadado'] != 0, df['vlr_arrecadado'], np.nan)
@@ -86,35 +95,44 @@ class ValueLessRevenue(TableMetricProvider):
 
         # Entradas da tabela resultante onde algum valor supera a receita total arrecadada
         df_iter = None
+        df_previous = df.copy()
         for column in value_columns:
-            df_current = df[df[column] > df['vlr_arrecadado']]
-
-            df_current['vlr_comparado'] = df[column]
+            
+            df_current = df_previous.copy()
+            df_current['vlr_comparado'] = df_current[column]
             df_current['coluna_comparada'] = column
 
-            if df_iter is None:
-                df_iter = df_current
-            else:
-                df_iter = df_iter.union(df_current)
+            # Transforma valores nulos em 0
+            df_current[column].fillna(0, inplace=True)
 
-        df = df_iter
+            # Filtra registros com valores maiores que o valor arrecadado
+            df_current = df_current[df_current[column] > df_current['vlr_arrecadado']]
+
+            if df_iter is None:
+                df_iter = df_current.copy()
+            else:
+                df_iter = pd.concat([df_iter, df_current])
+
+            df = df_iter
+        
         # Resgatando os valores originais do ano corrente
-        df['ano_exercicio'] = df['ano_exercicio_tmp']
-        df.drop('ano_exercicio_tmp', axis=1, inplace=True)
+        df['ano'] = df['ano_tmp']
+        df.drop('ano_tmp', axis=1, inplace=True)
 
         df['table_id'] = df[table_id]
         
-        unexpected_percent = 100 * (df.shape[0] / table_size)
+        unexpected_records = len(df[table_id].unique())
+        unexpected_percent = 100 * (unexpected_records / table_size)
 
         # Convertendo o DataFrame para o formato necessário
         df = df.head(100)
         # Selecionando as colunas de interesse
         arr_fields = []
         arr_fields.append("table_id")
-        arr_fields.append("cod_entidade")
+        arr_fields.append("sk_ibge")
         arr_fields.append("nome_entidade")
-        arr_fields.append("ano_exercicio")
-        arr_fields.append("coluna_comparado")
+        arr_fields.append("ano")
+        arr_fields.append("coluna_comparada")
         arr_fields.append("vlr_comparado")
         arr_fields.append("vlr_arrecadado")
 
@@ -155,10 +173,10 @@ class ValueLessRevenue(TableMetricProvider):
         df_receita = metric_value_kwargs.get("df_receita")
         df_receita = spark.createDataFrame(Row(**x) for x in df_receita)
 
-        table_size = df.count()
+        df_tempo = metric_value_kwargs.get("df_tempo")
+        df_tempo = spark.createDataFrame(Row(**x) for x in df_tempo)
 
-        # Colunas de valores a serem comparados com a receita
-        value_columns = metric_value_kwargs.get("value_columns")
+        table_size = df.count()
 
         # Flag para indicar se a tabela é a própria fato_licitacao
         df_licitacao = metric_value_kwargs.get("df_licitacao")
@@ -168,17 +186,20 @@ class ValueLessRevenue(TableMetricProvider):
             df_licitacao = spark.createDataFrame(Row(**x) for x in df_licitacao)
 
             # Join com a fato_licitacao para obter informações de valores
-            df = df.join(df_licitacao, on="id_licitacao", how="inner")
+            df = df.join(df_licitacao, on="sk_licitacao", how="inner")
+
+        # Join com a dim_tempo para obter o ano da licitação
+        df = df.join(df_tempo, on="sk_tempo", how="inner")
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
-        df = df.withColumn("ano_exercicio_tmp", df.ano_exercicio)
+        df = df.withColumn("ano_tmp", df.ano)
         df = df.withColumn(
-            "ano_exercicio", F.when(df.ano_exercicio == date.today().year, date.today().year - 1)
-            .otherwise(df.ano_exercicio)
+            "ano", F.when(df.ano == date.today().year, date.today().year - 1)
+            .otherwise(df.ano)
         )
 
         # Join com a fato_receita para obter informações do município
-        df = df.join(df_receita, on=["cod_entidade", "ano_exercicio"], how="inner")
+        df = df.join(df_receita, on=["sk_ibge", "ano"], how="inner")
 
         # Se o valor arrecadado for 0, seu valor é substituída pelo do ano anterior
         df = df.withColumn(
@@ -189,7 +210,7 @@ class ValueLessRevenue(TableMetricProvider):
         window = (
             Window
             .partitionBy("vlr_arrecadado")
-            .orderBy(["cod_entidade", "ano_exercicio"])
+            .orderBy(["cod_entidade", "ano"])
             .rowsBetween(Window.unboundedPreceding, Window.currentRow)
         )
         df = (
@@ -197,36 +218,49 @@ class ValueLessRevenue(TableMetricProvider):
             .withColumn("vlr_arrecadado", F.last("vlr_arrecadado", ignorenulls=True).over(window))
         )
 
+        # Colunas de valores a serem comparados com a receita
+        value_columns = metric_value_kwargs.get("value_columns")
 
         # Entradas da tabela resultante onde algum valor supera a receita total arrecadada
         df_iter = None
+        df_previous = df
         for column in value_columns:
-            df_current = df.filter(col(column) > df.vlr_arrecadado).alias('df_current')
+            
+            df_current = df_previous
             df_current = df_current.withColumn("vlr_comparado", col(column))
-            df_current = df_current.withColumn("coluna_comparado", lit(column))
+            df_current = df_current.withColumn("coluna_comparada", lit(column))
+            
+            # Transforma valores nulos em 0
+            df_current = df_current.fillna(0, subset=[column])
+
+            # Filtra registros com valores maiores que o valor arrecadado
+            df_current = df.filter(col(column) > df.vlr_arrecadado).alias('df_current')
+            
             if df_iter is None:
                 df_iter = df_current.alias('df_iter')
             else:
                 df_iter = df_iter.union(df_current)
         
-        df = df_iter
+            df = df_iter
+
         # Resgatando os valores originais do ano corrente
-        df = df.withColumn("ano_exercicio", df.ano_exercicio_tmp)
-        df = df.drop("ano_exercicio_tmp")
+        df = df.withColumn("ano", df.ano_tmp)
+        df = df.drop("ano_tmp")
 
         df = df.withColumn("table_id", col(table_id))
 
-        unexpected_percent = 100 * (df.count() / table_size)
+        unexpected_records = df[table_id].countDistinct()
+        unexpected_percent = 100 * (unexpected_records / table_size)
 
         # Convertendo o DataFrame para o formato necessário
         df = df.limit(100)
         # Selecionando as colunas de interesse
         arr_fields = []
         arr_fields.append("table_id")
-        arr_fields.append("cod_entidade")
+        arr_fields.append("sk_ibge")
         arr_fields.append("nome_entidade")
-        arr_fields.append("ano_exercicio")
-        arr_fields.append("coluna_comparado")
+        arr_fields.append("ano")
+        arr_fields.append("coluna_comparada")
         arr_fields.append("vlr_comparado")
         arr_fields.append("vlr_arrecadado")
         df = df.select(*arr_fields)
@@ -244,7 +278,8 @@ class ExpectValueLessRevenue(TableExpectation):
         "table_id",
         "value_columns",
         "df_licitacao",
-        "df_receita"
+        "df_receita",
+        "df_tempo"
     )
 
     # Default values
@@ -254,7 +289,8 @@ class ExpectValueLessRevenue(TableExpectation):
         "table_id": None,
         "value_columns": None,
         "df_licitacao": None,
-        "df_receita": None
+        "df_receita": None,
+        "df_tempo": None
     }
 
 
@@ -302,7 +338,8 @@ class ExpectValueLessRevenue(TableExpectation):
             "table_id": "str",
             "value_columns": "list",
             "df_licitacao": "list",
-            "df_receita": "list"
+            "df_receita": "list",
+            "df_tempo": "list"
         }
 
         for p in parameters.keys():
@@ -399,13 +436,14 @@ class ExpectValueLessRevenue(TableExpectation):
                 for col_name in df[0].keys():
                     if "vlr" in col_name:
                         # Modificando o formato das colunas de valores
-                        value = round(float(row[col_name]), 2)
-                        row[col_name] = f"R$ {value:,.2f}".replace(',','v').replace('.',',').replace('v','.')
+                        if row[col_name] is not None:
+                            value = round(float(row[col_name]), 2)
+                            row[col_name] = f"R$ {value:,.2f}".replace(',','v').replace('.',',').replace('v','.')
                 table_rows.append([
-                    row["ano_exercicio"],
+                    row["ano"],
                     row["nome_entidade"],
                     row["table_id"],
-                    row["coluna_comparado"],
+                    row["coluna_comparada"],
                     row["vlr_comparado"],
                     row["vlr_arrecadado"]
                 ])
