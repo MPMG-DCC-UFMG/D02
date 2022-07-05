@@ -113,7 +113,7 @@ class ValueLessRevenue(TableMetricProvider):
             else:
                 df_iter = pd.concat([df_iter, df_current])
 
-            df = df_iter
+        df = df_iter
         
         # Resgatando os valores originais do ano corrente
         df['ano'] = df['ano_tmp']
@@ -233,14 +233,14 @@ class ValueLessRevenue(TableMetricProvider):
             df_current = df_current.fillna(0, subset=[column])
 
             # Filtra registros com valores maiores que o valor arrecadado
-            df_current = df.filter(col(column) > df.vlr_arrecadado).alias('df_current')
+            df_current = df_current.filter(col(column) > df_current.vlr_arrecadado).alias('df_current')
             
             if df_iter is None:
                 df_iter = df_current.alias('df_iter')
             else:
                 df_iter = df_iter.union(df_current)
         
-            df = df_iter
+        df = df_iter
 
         # Resgatando os valores originais do ano corrente
         df = df.withColumn("ano", df.ano_tmp)
