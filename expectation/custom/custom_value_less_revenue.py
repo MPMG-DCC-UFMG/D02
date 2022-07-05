@@ -161,8 +161,7 @@ class ValueLessRevenue(TableMetricProvider):
         from pyspark.sql import Row
         from pyspark.sql import functions as F
         from pyspark.sql.window import Window
-        from pyspark.sql.functions import lit
-        from pyspark.sql.functions import col
+        from pyspark.sql.functions import lit, col, countDistinct
         
         sc = SparkContext.getOrCreate()
         spark = SparkSession(sc)
