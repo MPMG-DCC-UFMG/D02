@@ -6,11 +6,9 @@ Args:
     table_id (string): Chave primária da tabela de origem para identificar as instâncias
         no data_docs.
     df_licitacao (list): tabela contendo valores de licitações referenciadas na tabela 
-        de origem.
+        de origem -- necessária para obter o ano de exercício.
     df_receita (list): tabela contendo os dados da receita já agrupados por entidade e ano.
         Necessária para obter informações de receita do município.
-    df_tempo (list): tabela contendo as informações de data para join com a tabela em 
-        questão usando a chave sk_tempo.
     value_columns (list): lista com as colunas de valores que serão verificadas
 """
 
@@ -39,7 +37,7 @@ from typing import Any, Dict, Optional, Tuple
 
 class ValueLessRevenue(TableMetricProvider):
     metric_name = "table.custom.value_less_revenue"
-    value_keys = ("table_id", "value_columns", "df_licitacao", "df_receita", "df_tempo")
+    value_keys = ("table_id", "value_columns", "df_licitacao", "df_receita")
 
 
     @metric_value(engine=PandasExecutionEngine)
@@ -60,9 +58,6 @@ class ValueLessRevenue(TableMetricProvider):
         df_receita = metric_value_kwargs.get("df_receita")
         df_receita = pd.DataFrame(df_receita)
 
-        df_tempo = metric_value_kwargs.get("df_tempo")
-        df_tempo = pd.DataFrame(df_tempo)
-
         table_size = df.shape[0]
 
         df_licitacao = metric_value_kwargs.get("df_licitacao")
@@ -72,9 +67,6 @@ class ValueLessRevenue(TableMetricProvider):
 
             # Join com a fato_licitacao para obter informações de valores
             df = pd.merge(df, df_licitacao, on='sk_licitacao', how='inner')
-
-        # Join com a dim_tempo para obter o ano da licitação
-        df = pd.merge(df, df_tempo, on='sk_tempo', how='inner')
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
         df['ano_tmp'] = df['ano']
@@ -172,9 +164,6 @@ class ValueLessRevenue(TableMetricProvider):
         df_receita = metric_value_kwargs.get("df_receita")
         df_receita = spark.createDataFrame(Row(**x) for x in df_receita)
 
-        df_tempo = metric_value_kwargs.get("df_tempo")
-        df_tempo = spark.createDataFrame(Row(**x) for x in df_tempo)
-
         table_size = df.count()
 
         # Flag para indicar se a tabela é a própria fato_licitacao
@@ -186,9 +175,6 @@ class ValueLessRevenue(TableMetricProvider):
 
             # Join com a fato_licitacao para obter informações de valores
             df = df.join(df_licitacao, on="sk_licitacao", how="inner")
-
-        # Join com a dim_tempo para obter o ano da licitação
-        df = df.join(df_tempo, on="sk_tempo", how="inner")
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
         df = df.withColumn("ano_tmp", df.ano)
@@ -277,8 +263,7 @@ class ExpectValueLessRevenue(TableExpectation):
         "table_id",
         "value_columns",
         "df_licitacao",
-        "df_receita",
-        "df_tempo"
+        "df_receita"
     )
 
     # Default values
@@ -288,8 +273,7 @@ class ExpectValueLessRevenue(TableExpectation):
         "table_id": None,
         "value_columns": None,
         "df_licitacao": None,
-        "df_receita": None,
-        "df_tempo": None
+        "df_receita": None
     }
 
 
@@ -337,8 +321,7 @@ class ExpectValueLessRevenue(TableExpectation):
             "table_id": "str",
             "value_columns": "list",
             "df_licitacao": "list",
-            "df_receita": "list",
-            "df_tempo": "list"
+            "df_receita": "list"
         }
 
         for p in parameters.keys():
