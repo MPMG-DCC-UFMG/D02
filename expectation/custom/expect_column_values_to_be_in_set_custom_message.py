@@ -116,6 +116,7 @@ class ExpectColumnValuesToBeInSetCustomMessage(ExpectColumnValuesToBeInSet):
                 "parse_strings_as_datetimes",
                 "row_condition",
                 "condition_parser",
+                "custom_message"
             ],
         )
 
@@ -129,16 +130,19 @@ class ExpectColumnValuesToBeInSetCustomMessage(ExpectColumnValuesToBeInSet):
                 ["$v__" + str(i) for i, v in enumerate(params["value_set"])]
             )
 
-        template_str = "Valores devem pertencer a este set: " + values_string
-
-        if params["mostly"] is not None:
-            params["mostly_pct"] = num_to_str(
-                params["mostly"] * 100, precision=3, no_scientific=True
-            )
-            # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
-            template_str += ", pelo menos $mostly_pct % ds vezes."
+        if params["custom_message"] is not None:
+            template_str = params["custom_message"]
         else:
-            template_str += "."
+            template_str = "Valores devem pertencer a este set: " + values_string
+
+            if params["mostly"] is not None:
+                params["mostly_pct"] = num_to_str(
+                    params["mostly"] * 100, precision=3, no_scientific=True
+                )
+                # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
+                template_str += ", pelo menos $mostly_pct %% das vezes."
+            else:
+                template_str += "."
 
         if params.get("parse_strings_as_datetimes"):
             template_str += " Valores devem ser considerados no formato datetime."
