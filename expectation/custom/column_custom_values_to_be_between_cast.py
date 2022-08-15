@@ -29,7 +29,6 @@ from great_expectations.render.util import (
 from typing import Any, Dict, List, Optional, Union
 
 # Adaptei o código da métrica original (ColumnValuesBetween) para inserir o cast
-# [27/10/2021] Por enquanto, só alterei a função _pandas()
 class ColumnValuesBetweenCast(ColumnMapMetricProvider):
 
     condition_metric_name = "column_values.between.cast"
@@ -317,7 +316,6 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
     map_metric = "column_values.between.cast"
 
 
-    @classmethod
     def handle_strict_min_max_custom(params: dict) -> (str, str):
         """
         Utility function for the at least and at most conditions based on strictness.
@@ -404,7 +402,7 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
         if (params["min_value"] is None) and (params["max_value"] is None):
             template_str += "pode possuir qualquer valor numérico."
         else:
-            at_least_str, at_most_str = handle_strict_min_max_custom(params)
+            at_least_str, at_most_str = self.handle_strict_min_max_custom(params)
 
             mostly_str = ""
             if params["mostly"] is not None and params["mostly"] < 1.0:
@@ -474,7 +472,7 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
         if (params["min_value"] is None) and (params["max_value"] is None):
             template_str += "pode possuir qualquer valor numérico."
         else:
-            at_least_str, at_most_str = handle_strict_min_max_custom(params)
+            at_least_str, at_most_str = self.handle_strict_min_max_custom(params)
 
             mostly_str = ""
             if params["mostly"] is not None and params["mostly"] < 1.0:
