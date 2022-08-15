@@ -318,24 +318,24 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
 
 
     def handle_strict_min_max_custom(params: dict) -> (str, str):
-    """
-    Utility function for the at least and at most conditions based on strictness.
-    Args:
-        params: dictionary containing "strict_min" and "strict_max" booleans.
-    Returns:
-        tuple of strings to use for the at least condition and the at most condition
-    """
+        """
+        Utility function for the at least and at most conditions based on strictness.
+        Args:
+            params: dictionary containing "strict_min" and "strict_max" booleans.
+        Returns:
+            tuple of strings to use for the at least condition and the at most condition
+        """
 
-    at_least_str = (
-        "maiores que"
-        if params.get("strict_min") is True
-        else "maiores ou iguais a"
-    )
-    at_most_str = (
-        "menores que" if params.get("strict_max") is True else "menores ou iguais a"
-    )
+        at_least_str = (
+            "maiores que"
+            if params.get("strict_min") is True
+            else "maiores ou iguais a"
+        )
+        at_most_str = (
+            "menores que" if params.get("strict_max") is True else "menores ou iguais a"
+        )
 
-    return at_least_str, at_most_str
+        return at_least_str, at_most_str
 
 
     @classmethod
