@@ -140,7 +140,7 @@ class ExpectColumnValuesToBeInSetCustomMessage(ExpectColumnValuesToBeInSet):
                     params["mostly"] * 100, precision=3, no_scientific=True
                 )
                 # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
-                template_str += ", pelo menos $mostly_pct %% das vezes."
+                template_str += ", pelo menos $mostly_pct % das vezes."
             else:
                 template_str += "."
 

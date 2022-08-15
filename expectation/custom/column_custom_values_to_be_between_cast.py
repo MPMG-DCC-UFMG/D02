@@ -315,3 +315,203 @@ future release.  Please update code accordingly.
 class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
 
     map_metric = "column_values.between.cast"
+
+
+    def handle_strict_min_max_custom(params: dict) -> (str, str):
+    """
+    Utility function for the at least and at most conditions based on strictness.
+    Args:
+        params: dictionary containing "strict_min" and "strict_max" booleans.
+    Returns:
+        tuple of strings to use for the at least condition and the at most condition
+    """
+
+    at_least_str = (
+        "maiores que"
+        if params.get("strict_min") is True
+        else "maiores ou iguais a"
+    )
+    at_most_str = (
+        "menores que" if params.get("strict_max") is True else "menores ou iguais a"
+    )
+
+    return at_least_str, at_most_str
+
+
+    @classmethod
+    def _atomic_prescriptive_template(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        runtime_configuration = runtime_configuration or {}
+        include_column_name = runtime_configuration.get("include_column_name", True)
+        include_column_name = (
+            include_column_name if include_column_name is not None else True
+        )
+        styling = runtime_configuration.get("styling")
+        params = substitute_none_for_missing(
+            configuration.kwargs,
+            [
+                "column",
+                "min_value",
+                "max_value",
+                "mostly",
+                "row_condition",
+                "condition_parser",
+                "strict_min",
+                "strict_max",
+            ],
+        )
+        params_with_json_schema = {
+            "column": {"schema": {"type": "string"}, "value": params.get("column")},
+            "min_value": {
+                "schema": {"type": "number"},
+                "value": params.get("min_value"),
+            },
+            "max_value": {
+                "schema": {"type": "number"},
+                "value": params.get("max_value"),
+            },
+            "mostly": {"schema": {"type": "number"}, "value": params.get("mostly")},
+            "mostly_pct": {
+                "schema": {"type": "string"},
+                "value": params.get("mostly_pct"),
+            },
+            "row_condition": {
+                "schema": {"type": "string"},
+                "value": params.get("row_condition"),
+            },
+            "condition_parser": {
+                "schema": {"type": "string"},
+                "value": params.get("condition_parser"),
+            },
+            "strict_min": {
+                "schema": {"type": "boolean"},
+                "value": params.get("strict_min"),
+            },
+            "strict_max": {
+                "schema": {"type": "boolean"},
+                "value": params.get("strict_max"),
+            },
+        }
+
+        template_str = ""
+        if (params["min_value"] is None) and (params["max_value"] is None):
+            template_str += "pode possuir qualquer valor numérico."
+        else:
+            at_least_str, at_most_str = handle_strict_min_max_custom(params)
+
+            mostly_str = ""
+            if params["mostly"] is not None and params["mostly"] < 1.0:
+                params_with_json_schema["mostly_pct"]["value"] = num_to_str(
+                    params["mostly"] * 100, precision=15, no_scientific=True
+                )
+                # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
+                mostly_str = ", ao menos $mostly_pct % das vezes"
+
+            if params["min_value"] is not None and params["max_value"] is not None:
+                template_str += f"Valores devem ser {at_least_str} $min_value e {at_most_str} $max_value{mostly_str}."
+
+            elif params["min_value"] is None:
+                template_str += f"Valores devem ser {at_most_str} $max_value{mostly_str}."
+
+            elif params["max_value"] is None:
+                template_str += f"Valores devem ser {at_least_str} $min_value{mostly_str}."
+
+        if include_column_name:
+            template_str = f"$column {template_str}"
+
+        if params["row_condition"] is not None:
+            (
+                conditional_template_str,
+                conditional_params,
+            ) = parse_row_condition_string_pandas_engine(
+                params["row_condition"], with_schema=True
+            )
+            template_str = f"{conditional_template_str}, então {template_str}"
+            params_with_json_schema.update(conditional_params)
+
+        return (template_str, params_with_json_schema, styling)
+
+    # NOTE: This method is a pretty good example of good usage of `params`.
+    @classmethod
+    @renderer(renderer_type="renderer.prescriptive")
+    @render_evaluation_parameter_string
+    def _prescriptive_renderer(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        runtime_configuration = runtime_configuration or {}
+        include_column_name = runtime_configuration.get("include_column_name", True)
+        include_column_name = (
+            include_column_name if include_column_name is not None else True
+        )
+        styling = runtime_configuration.get("styling")
+        params = substitute_none_for_missing(
+            configuration.kwargs,
+            [
+                "column",
+                "min_value",
+                "max_value",
+                "mostly",
+                "row_condition",
+                "condition_parser",
+                "strict_min",
+                "strict_max",
+            ],
+        )
+
+        template_str = ""
+        if (params["min_value"] is None) and (params["max_value"] is None):
+            template_str += "pode possuir qualquer valor numérico."
+        else:
+            at_least_str, at_most_str = handle_strict_min_max_custom(params)
+
+            mostly_str = ""
+            if params["mostly"] is not None and params["mostly"] < 1.0:
+                params["mostly_pct"] = num_to_str(
+                    params["mostly"] * 100, precision=15, no_scientific=True
+                )
+                # params["mostly_pct"] = "{:.14f}".format(params["mostly"]*100).rstrip("0").rstrip(".")
+                mostly_str = ", ao menos $mostly_pct % das vezes"
+
+            if params["min_value"] is not None and params["max_value"] is not None:
+                template_str += f"Valores devem ser {at_least_str} $min_value e {at_most_str} $max_value{mostly_str}."
+
+            elif params["min_value"] is None:
+                template_str += f"Valores devem ser {at_most_str} $max_value{mostly_str}."
+
+            elif params["max_value"] is None:
+                template_str += f"Valores devem ser {at_least_str} $min_value{mostly_str}."
+
+        if include_column_name:
+            template_str = f"$column {template_str}"
+
+        if params["row_condition"] is not None:
+            (
+                conditional_template_str,
+                conditional_params,
+            ) = parse_row_condition_string_pandas_engine(params["row_condition"])
+            template_str = f"{conditional_template_str}, então {template_str}"
+            params.update(conditional_params)
+
+        return [
+            RenderedStringTemplateContent(
+                **{
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": template_str,
+                        "params": params,
+                        "styling": styling,
+                    },
+                }
+            )
+        ]
