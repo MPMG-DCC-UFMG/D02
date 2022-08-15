@@ -28,6 +28,29 @@ from great_expectations.render.util import (
 
 from typing import Any, Dict, List, Optional, Union
 
+
+
+def handle_strict_min_max_custom(params: dict) -> (str, str):
+    """
+    Utility function for the at least and at most conditions based on strictness.
+    Args:
+        params: dictionary containing "strict_min" and "strict_max" booleans.
+    Returns:
+        tuple of strings to use for the at least condition and the at most condition
+    """
+
+    at_least_str = (
+        "maiores que"
+        if params.get("strict_min") is True
+        else "maiores ou iguais a"
+    )
+    at_most_str = (
+        "menores que" if params.get("strict_max") is True else "menores ou iguais a"
+    )
+
+    return at_least_str, at_most_str
+
+
 # Adaptei o código da métrica original (ColumnValuesBetween) para inserir o cast
 class ColumnValuesBetweenCast(ColumnMapMetricProvider):
 
@@ -316,27 +339,6 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
     map_metric = "column_values.between.cast"
 
 
-    def handle_strict_min_max_custom(params: dict) -> (str, str):
-        """
-        Utility function for the at least and at most conditions based on strictness.
-        Args:
-            params: dictionary containing "strict_min" and "strict_max" booleans.
-        Returns:
-            tuple of strings to use for the at least condition and the at most condition
-        """
-
-        at_least_str = (
-            "maiores que"
-            if params.get("strict_min") is True
-            else "maiores ou iguais a"
-        )
-        at_most_str = (
-            "menores que" if params.get("strict_max") is True else "menores ou iguais a"
-        )
-
-        return at_least_str, at_most_str
-
-
     @classmethod
     def _atomic_prescriptive_template(
         cls,
@@ -402,7 +404,7 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
         if (params["min_value"] is None) and (params["max_value"] is None):
             template_str += "pode possuir qualquer valor numérico."
         else:
-            at_least_str, at_most_str = self.handle_strict_min_max_custom(params)
+            at_least_str, at_most_str = handle_strict_min_max_custom(params)
 
             mostly_str = ""
             if params["mostly"] is not None and params["mostly"] < 1.0:
@@ -472,7 +474,7 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
         if (params["min_value"] is None) and (params["max_value"] is None):
             template_str += "pode possuir qualquer valor numérico."
         else:
-            at_least_str, at_most_str = self.handle_strict_min_max_custom(params)
+            at_least_str, at_most_str = handle_strict_min_max_custom(params)
 
             mostly_str = ""
             if params["mostly"] is not None and params["mostly"] < 1.0:
