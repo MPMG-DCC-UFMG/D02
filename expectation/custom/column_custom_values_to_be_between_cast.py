@@ -317,6 +317,7 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
     map_metric = "column_values.between.cast"
 
 
+    @classmethod
     def handle_strict_min_max_custom(params: dict) -> (str, str):
         """
         Utility function for the at least and at most conditions based on strictness.
