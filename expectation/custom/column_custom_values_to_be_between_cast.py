@@ -516,3 +516,204 @@ class ExpectColumnValuesToBeBetweenCast(ExpectColumnValuesToBeBetween):
                 }
             )
         ]
+
+
+
+    @classmethod
+    @renderer(renderer_type="renderer.descriptive.example_values_block")
+    def _descriptive_example_values_block_renderer(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs
+    ):
+        assert result, "Must pass in result."
+        if "partial_unexpected_counts" in result.result:
+            partial_unexpected_counts = result.result["partial_unexpected_counts"]
+            values = [str(v["value"]) for v in partial_unexpected_counts]
+        elif "partial_unexpected_list" in result.result:
+            values = [str(item) for item in result.result["partial_unexpected_list"]]
+        else:
+            return
+
+        classes = ["col-3", "mt-1", "pl-1", "pr-1"]
+
+        if any(len(value) > 80 for value in values):
+            content_block_type = "bullet_list"
+            content_block_class = RenderedBulletListContent
+        else:
+            content_block_type = "value_list"
+            content_block_class = ValueListContent
+
+        new_block = content_block_class(
+            **{
+                "content_block_type": content_block_type,
+                "header": RenderedStringTemplateContent(
+                    **{
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": "Valores de exemplo",
+                            "tooltip": {"content": "expect_column_values_to_be_between_cast"},
+                            "tag": "h6",
+                        },
+                    }
+                ),
+                content_block_type: [
+                    {
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": "$value",
+                            "params": {"value": value},
+                            "styling": {
+                                "default": {
+                                    "classes": ["badge", "badge-info"]
+                                    if content_block_type == "value_list"
+                                    else [],
+                                    "styles": {"word-break": "break-all"},
+                                },
+                            },
+                        },
+                    }
+                    for value in values
+                ],
+                "styling": {
+                    "classes": classes,
+                },
+            }
+        )
+
+        return new_block
+
+
+    @classmethod
+    @renderer(renderer_type="renderer.diagnostic.observed_value")
+    def _diagnostic_observed_value_renderer(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        result_dict = result.result
+        if result_dict is None:
+            return "--"
+
+        if result_dict.get("observed_value"):
+            observed_value = result_dict.get("observed_value")
+            if isinstance(observed_value, (int, float)) and not isinstance(observed_value, bool):
+                if (observed_value == 1):
+                    return num_to_str(observed_value, precision=3, use_locale=True) + " valores inesperados encontrados"
+                else:
+                    return num_to_str(observed_value, precision=3, use_locale=True) + " valores inesperados encontrados"
+            return str(observed_value)
+        elif result_dict.get("unexpected_percent") is not None:
+            return (
+                num_to_str(result_dict.get("unexpected_percent"), precision=3).replace(".", ",")
+                + "% inesperado"
+            )
+        else:
+            return "--"
+
+    @classmethod
+    @renderer(renderer_type="renderer.diagnostic.unexpected_statement")
+    def _diagnostic_unexpected_statement_renderer(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        assert result, "Must provide a result object."
+        success = result.success
+        result_dict = result.result
+        if result.exception_info["raised_exception"]:
+            exception_message_template_str = (
+                "\n\n$expectation_type raised an exception:\n$exception_message"
+            )
+
+            exception_message = RenderedStringTemplateContent(
+                **{
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": exception_message_template_str,
+                        "params": {
+                            "expectation_type": result.expectation_config.expectation_type,
+                            "exception_message": result.exception_info[
+                                "exception_message"
+                            ],
+                        },
+                        "tag": "strong",
+                        "styling": {
+                            "classes": ["text-danger"],
+                            "params": {
+                                "exception_message": {"tag": "code"},
+                                "expectation_type": {
+                                    "classes": ["badge", "badge-danger", "mb-2"]
+                                },
+                            },
+                        },
+                    },
+                }
+            )
+
+            exception_traceback_collapse = CollapseContent(
+                **{
+                    "collapse_toggle_link": "Show exception traceback...",
+                    "collapse": [
+                        RenderedStringTemplateContent(
+                            **{
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": result.exception_info[
+                                        "exception_traceback"
+                                    ],
+                                    "tag": "code",
+                                },
+                            }
+                        )
+                    ],
+                }
+            )
+
+            return [exception_message, exception_traceback_collapse]
+
+        if success or not result_dict.get("unexpected_count"):
+            return []
+        else:
+            unexpected_count = num_to_str(
+                result_dict["unexpected_count"], use_locale=True, precision=20
+            )
+            unexpected_percent = (
+                num_to_str(result_dict["unexpected_percent"], precision=3) + "%"
+            )
+            element_count = num_to_str(
+                result_dict["element_count"], use_locale=True, precision=20
+            )
+    
+            template_str = (
+                "\n\n$unexpected_count valores inesperados encontrados. "
+                "$unexpected_percent de $element_count entradas."
+            )
+
+            return [
+                RenderedStringTemplateContent(
+                    **{
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": template_str,
+                            "params": {
+                                "unexpected_count": unexpected_count,
+                                "unexpected_percent": unexpected_percent,
+                                "element_count": element_count,
+                            },
+                            "tag": "strong",
+                            "styling": {"classes": ["text-danger"]},
+                        },
+                    }
+                )
+            ]
+        
