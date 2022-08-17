@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import re
 
@@ -23,7 +22,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
           </div>
         </div>
       
-
       <div class="mb-2">
         <div class="d-flex justify-content-center">
           <button type="button" class="btn btn-info" data-toggle="modal" data-target=".ge-walkthrough-modal">
@@ -81,8 +79,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
               </div>
             </div>
         </div>
-
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-2">
                 <div class="card-header"><h4>What are Expectations?</h4></div>
                 <div class="card-body">
@@ -120,8 +116,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
                   </div>
                 </div>
                 </div>
-
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-3">
                 <div class="card-header"><h4>Expectations can be presented in a machine-friendly JSON</h4></div>
                 <div class="card-body">
@@ -154,7 +148,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
                   </div>
                 </div>
                 </div>
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-4">
                 <div class="card-header"><h4>Validation produces a validation result object</h4></div>
                 <div class="card-body">
@@ -194,7 +187,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
                   </div>
                 </div>
                 </div>
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-5">
                 <div class="card-header"><h4>Validation results save you time.</h4></div>
                 <div class="card-body">
@@ -222,7 +214,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
                   </div>
                 </div>
                 </div>
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-6">
                 <div class="card-header"><h4>Great Expectations provides a large library of expectations.</h4></div>
                 <div class="card-body">
@@ -252,7 +243,6 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
                   </div>
                 </div>
                 </div>
-
                 <div class="card walkthrough-card bg-dark text-white walkthrough-7">
                 <div class="card-header"><h4>Now explore and edit the sample suite!</h4></div>
                 <div class="card-body">
@@ -287,7 +277,27 @@ def edit_data_docs(data_docs_input_name, table_name, data_docs_output_name=None)
 </div>""", "")
 
     data_docs = data_docs.replace('<li class="ge-breadcrumbs-item breadcrumb-item"><a href="../../../../../index.html">Home</a></li>', '')
-    
+    data_docs = data_docs.replace('Expectation Validation Result', '')
+    data_docs = data_docs.replace('Evaluates whether a batch of data matches expectations.', '')
+
+    # Traduções
+    data_docs = data_docs.replace('Table of Contents', 'Índice')
+    data_docs = data_docs.replace('Actions', 'Ações')
+    data_docs = data_docs.replace('Validation Filter', 'Filtro de indicador')
+    data_docs = data_docs.replace('Show All', 'Mostrar tudo')
+    data_docs = data_docs.replace('Failed Only', 'Apenas com falha')
+    data_docs = data_docs.replace('Statistics', 'Estatisticas')
+    data_docs = data_docs.replace('Overview', 'Visão geral')
+    data_docs = data_docs.replace('Table-Level Expectations', 'Indicadores a nível de tabela')
+    data_docs = data_docs.replace('Evaluated Expectations', 'Indicadores avaliados')
+    data_docs = data_docs.replace('Successful Expectations', 'Indicadores bem sucedidos')
+    data_docs = data_docs.replace('Unsuccessful Expectations', 'Indicadores mal sucedidos')
+    data_docs = data_docs.replace('Success Percent', 'Percentual de sucesso')
+    data_docs = data_docs.replace('Expectation', 'Indicador')
+    data_docs = data_docs.replace('Show more info...', 'Ver mais informações...')
+    data_docs = data_docs.replace('Observed Value', 'Valor Observado')
+    data_docs = data_docs.replace('Search', 'Busca')
+
     f = open(data_docs_output_name, 'w', encoding="utf-8")
     f.write(data_docs)
     f.close()

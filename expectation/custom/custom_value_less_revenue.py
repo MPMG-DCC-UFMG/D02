@@ -1,7 +1,6 @@
 """
 Verifica se existe alguma licitação cujo valor excede o total arrecadado pelo município
 naquele ano.
-
 Args:
     table_id (string): Chave primária da tabela de origem para identificar as instâncias
         no data_docs.
@@ -67,6 +66,9 @@ class ValueLessRevenue(TableMetricProvider):
 
             # Join com a fato_licitacao para obter informações de valores
             df = pd.merge(df, df_licitacao, on='sk_licitacao', how='inner')
+        else:
+            # Join com a fato_receita para obter informações do município
+            df['sk_ibge'] = df['sk_municipio']
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
         df['ano_tmp'] = df['ano']
@@ -175,16 +177,19 @@ class ValueLessRevenue(TableMetricProvider):
 
             # Join com a fato_licitacao para obter informações de valores
             df = df.join(df_licitacao, on="sk_licitacao", how="inner")
+        else:
+            # Join com a fato_receita para obter informações do município
+            df = df.withColumn("sk_ibge", df.sk_municipio)
 
         # Se a licitação for do ano corrente, seu valor será atribuído ao ano anterior
-        df = df.withColumn("ano_tmp", df.ano)
+        df = df.withColumn("ano_tmp", df.ano_processo)
         df = df.withColumn(
-            "ano", F.when(df.ano == date.today().year, date.today().year - 1)
-            .otherwise(df.ano)
+            "ano_processo", F.when(df.ano_processo == date.today().year, date.today().year - 1)
+            .otherwise(df.ano_processo)
         )
 
         # Join com a fato_receita para obter informações do município
-        df = df.join(df_receita, on=["sk_ibge", "ano"], how="inner")
+        df = df.join(df_receita, on=["sk_ibge", "ano_processo"], how="inner")
 
         # Se o valor arrecadado for 0, seu valor é substituída pelo do ano anterior
         df = df.withColumn(
@@ -195,7 +200,7 @@ class ValueLessRevenue(TableMetricProvider):
         window = (
             Window
             .partitionBy("vlr_arrecadado")
-            .orderBy(["nome_entidade", "ano"])
+            .orderBy(["nome_entidade", "ano_processo"])
             .rowsBetween(Window.unboundedPreceding, Window.currentRow)
         )
         df = (
@@ -229,7 +234,7 @@ class ValueLessRevenue(TableMetricProvider):
         df = df_iter
 
         # Resgatando os valores originais do ano corrente
-        df = df.withColumn("ano", df.ano_tmp)
+        df = df.withColumn("ano_processo", df.ano_tmp)
         df = df.drop("ano_tmp")
 
         df = df.withColumn("table_id", col(table_id))
@@ -244,7 +249,7 @@ class ValueLessRevenue(TableMetricProvider):
         arr_fields.append("table_id")
         arr_fields.append("sk_ibge")
         arr_fields.append("nome_entidade")
-        arr_fields.append("ano")
+        arr_fields.append("ano_processo")
         arr_fields.append("coluna_comparada")
         arr_fields.append("vlr_comparado")
         arr_fields.append("vlr_arrecadado")
@@ -302,7 +307,6 @@ class ExpectValueLessRevenue(TableExpectation):
         """
         Valida se uma configuração foi definida e se os parâmetros foram fornecidos
         corretamente.
-
         Args:
             configuration (OPTIONAL[ExpectationConfiguration]):
                 Parâmetro opcional de configuração.
@@ -422,7 +426,7 @@ class ExpectValueLessRevenue(TableExpectation):
                             value = round(float(row[col_name]), 2)
                             row[col_name] = f"R$ {value:,.2f}".replace(',','v').replace('.',',').replace('v','.')
                 table_rows.append([
-                    row["ano"],
+                    row["ano_processo"],
                     row["nome_entidade"],
                     row["table_id"],
                     row["coluna_comparada"],
